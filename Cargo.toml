@@ -1,0 +1,17 @@
+[package]
+name = "slacker"
+version = "1.0.0"
+license= "Unlicense"
+
+edition = "2018"
+publish = false
+
+[dependencies]
+dirs = "2"
+reqwest = { version = "0.10", features = ["blocking", "json", "native-tls-vendored"] }
+serde = { version = "1", features = ["derive"] }
+structopt = "0.3"
+toml = "0.5"
+
+[profile.release]
+lto = true
