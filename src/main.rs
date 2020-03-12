@@ -6,13 +6,13 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 
 use reqwest::blocking::Client;
-use reqwest::Url;
 use serde::Deserialize;
 use structopt::StructOpt;
+use url::Url;
 
-// How long to sleep (in ms) between posts
+// Interval (in ms) between posts
 // https://api.slack.com/docs/rate-limits
-const POST_INTERVAL: u64 = 5000;
+const POST_INTERVAL: u64 = 1000;
 
 #[derive(Debug, StructOpt)]
 struct Opts {
@@ -24,6 +24,10 @@ struct Opts {
     #[structopt(short, long)]
     url: Option<Url>,
 
+    /// Use named Slack Webhook URL
+    #[structopt(short, long)]
+    name: Option<String>,
+
     /// Ignore rate limit and send as fast as possible
     #[structopt(long)]
     no_rate_limit: bool,
@@ -31,7 +35,8 @@ struct Opts {
 
 #[derive(Deserialize)]
 struct Config {
-    slack_url: String,
+    slack_hook: Option<Url>,
+    hooks: Option<HashMap<String, Url>>,
 }
 
 fn main() {
@@ -42,11 +47,35 @@ fn main() {
 fn real_main() -> i32 {
     let opts = Opts::from_args();
 
-    let url = match (opts.url, read_config(opts.config)) {
-        (Some(url), _) | (_, Ok(url)) => url,
-        (_, Err(err)) => {
-            eprintln!("Could not read config ({}).", err);
-            return 1;
+    let url = if let Some(url) = opts.url {
+        url
+    } else {
+        match read_config(opts.config) {
+            Ok(Config {
+                hooks: Some(hooks), ..
+            }) if opts.name.is_some() => {
+                let name: String = opts.name.unwrap();
+                if let Some(hook) = hooks.get(&name) {
+                    hook.clone()
+                } else {
+                    eprintln!("Could not find Slack Webhook '{}'", name);
+                    return 1;
+                }
+            }
+            Ok(Config {
+                slack_hook: Some(hook),
+                ..
+            }) => hook,
+            Ok(Config {
+                slack_hook: None, ..
+            }) => {
+                eprintln!("Missing default Slack Webhook");
+                return 1;
+            }
+            Err(err) => {
+                eprintln!("Failed to read config ({})", err);
+                return 1;
+            }
         }
     };
 
@@ -72,12 +101,10 @@ fn real_main() -> i32 {
     0
 }
 
-fn read_config(path: PathBuf) -> io::Result<Url> {
+fn read_config(path: PathBuf) -> io::Result<Config> {
     let config_path = if let Ok(p) = path.strip_prefix("~/") {
-        let mut base = dirs::home_dir().ok_or(io::Error::new(
-            io::ErrorKind::NotFound,
-            "Home directory not found",
-        ))?;
+        let mut base = dirs::home_dir()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Home directory not found"))?;
 
         base.push(p);
         base
@@ -85,10 +112,8 @@ fn read_config(path: PathBuf) -> io::Result<Url> {
         path
     };
     let config_path = config_path.canonicalize()?;
-
     let config_str = fs::read_to_string(config_path)?;
-    let config: Config = toml::from_str(&config_str)?;
-    Url::parse(&config.slack_url).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err))
+    Ok(toml::from_str(&config_str)?)
 }
 
 fn post(url: &Url, msg: &str) -> Result<(), reqwest::Error> {

@@ -1,6 +1,6 @@
 [package]
 name = "slacker"
-version = "1.0.0"
+version = "1.1.0"
 license= "Unlicense"
 
 edition = "2018"
@@ -12,6 +12,7 @@ reqwest = { version = "0.10", features = ["blocking", "json", "native-tls-vendor
 serde = { version = "1", features = ["derive"] }
 structopt = "0.3"
 toml = "0.5"
+url = { version = "2", features = ["serde"] }
 
 [profile.release]
-lto = true
+lto = "fat"
